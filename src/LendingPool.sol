@@ -10,9 +10,9 @@ interface IERC20 {
 contract LendingPool {
     address public collateralToken;
     address public borrowToken;
-
     uint256 public collateralPrice;
     uint256 public borrowTokenPrice;
+    address public owner;
 
     uint256 public constant LTV = 75;
     uint256 public constant LIQUIDATION_THRESHOLD = 80;
@@ -27,34 +27,33 @@ contract LendingPool {
 
     mapping(address => Position) public positions;
 
-    address public owner;
-
     event Deposited(address indexed user, uint256 amount);
     event Borrowed(address indexed user, uint256 amount);
     event Repaid(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event Liquidated(address indexed user, address indexed liquidator, uint256 collateral, uint256 debt);
 
-    constructor(address _collateralToken, address _borrowToken, uint256 _collateralPrice, uint256 _borrowPrice) {
-        collateralToken = _collateralToken;
-        borrowToken = _borrowToken;
-        collateralPrice = _collateralPrice;
-        borrowTokenPrice = _borrowPrice;
+    constructor(address _col, address _brw, uint256 _cp, uint256 _bp) {
+        collateralToken = _col;
+        borrowToken = _brw;
+        collateralPrice = _cp;
+        borrowTokenPrice = _bp;
         owner = msg.sender;
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "not owner");
+        _checkOwner();
         _;
     }
 
-    function setCollateralPrice(uint256 newPrice) external onlyOwner {
-        collateralPrice = newPrice;
+    function _checkOwner() internal view {
+        require(msg.sender == owner, "not owner");
     }
 
     function deposit(uint256 amount) external {
         require(amount > 0, "zero amount");
-        IERC20(collateralToken).transferFrom(msg.sender, address(this), amount);
+        require(IERC20(collateralToken).transferFrom(msg.sender, address(this), amount), "transfer failed");
+        
         positions[msg.sender].collateral += amount;
         if (positions[msg.sender].lastUpdate == 0) {
             positions[msg.sender].lastUpdate = block.timestamp;
@@ -63,47 +62,41 @@ contract LendingPool {
     }
 
     function borrow(uint256 amount) external {
-        require(amount > 0, "zero amount");
         _accrueInterest(msg.sender);
 
-        uint256 collateralValue = positions[msg.sender].collateral * collateralPrice / 1e18;
-        uint256 maxBorrow = collateralValue * LTV / 100;
+        uint256 colValue = (positions[msg.sender].collateral * collateralPrice) / 1e18;
+        uint256 maxBorrow = (colValue * LTV) / 100;
         uint256 newDebtValue = (positions[msg.sender].debt + amount) * borrowTokenPrice / 1e18;
 
         require(newDebtValue <= maxBorrow, "exceeds LTV limit");
 
         positions[msg.sender].debt += amount;
-
-        IERC20(borrowToken).transfer(msg.sender, amount);
+        require(IERC20(borrowToken).transfer(msg.sender, amount), "borrow failed");
+        
         emit Borrowed(msg.sender, amount);
     }
 
     function repay(uint256 amount) external {
-        require(amount > 0, "zero amount");
         _accrueInterest(msg.sender);
-
         uint256 currentDebt = positions[msg.sender].debt;
-        if (amount > currentDebt) {
-            amount = currentDebt;
-        }
+        if (amount > currentDebt) amount = currentDebt;
 
-        IERC20(borrowToken).transferFrom(msg.sender, address(this), amount);
+        require(IERC20(borrowToken).transferFrom(msg.sender, address(this), amount), "repay failed");
         positions[msg.sender].debt -= amount;
+        
         emit Repaid(msg.sender, amount);
     }
 
     function withdraw(uint256 amount) external {
-        require(amount > 0, "zero amount");
         require(positions[msg.sender].collateral >= amount, "not enough collateral");
         _accrueInterest(msg.sender);
 
         positions[msg.sender].collateral -= amount;
-
         if (positions[msg.sender].debt > 0) {
             require(getHealthFactor(msg.sender) >= 1e18, "health factor too low");
         }
 
-        IERC20(collateralToken).transfer(msg.sender, amount);
+        require(IERC20(collateralToken).transfer(msg.sender, amount), "withdraw failed");
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -117,10 +110,18 @@ contract LendingPool {
         positions[user].debt = 0;
         positions[user].collateral = 0;
 
-        IERC20(borrowToken).transferFrom(msg.sender, address(this), debt);
-        IERC20(collateralToken).transfer(msg.sender, collateral);
+        require(IERC20(borrowToken).transferFrom(msg.sender, address(this), debt), "debt repay fail");
+        require(IERC20(collateralToken).transfer(msg.sender, collateral), "collateral take fail");
 
         emit Liquidated(user, msg.sender, collateral, debt);
+    }
+
+    function getHealthFactor(address user) public view returns (uint256) {
+        if (positions[user].debt == 0) return type(uint256).max;
+        uint256 colValue = (positions[user].collateral * collateralPrice) / 1e18;
+        uint256 threshold = (colValue * LIQUIDATION_THRESHOLD) / 100;
+        uint256 debtValue = (positions[user].debt * borrowTokenPrice) / 1e18;
+        return (threshold * 1e18) / debtValue;
     }
 
     function _accrueInterest(address user) internal {
@@ -128,20 +129,13 @@ contract LendingPool {
             positions[user].lastUpdate = block.timestamp;
             return;
         }
-
         uint256 elapsed = block.timestamp - positions[user].lastUpdate;
-        uint256 interest = positions[user].debt * INTEREST_RATE_PER_YEAR * elapsed / (100 * SECONDS_IN_YEAR);
+        uint256 interest = (positions[user].debt * INTEREST_RATE_PER_YEAR * elapsed) / (100 * SECONDS_IN_YEAR);
         positions[user].debt += interest;
         positions[user].lastUpdate = block.timestamp;
     }
-
-    function getHealthFactor(address user) public view returns (uint256) {
-        if (positions[user].debt == 0) return type(uint256).max;
-
-        uint256 collateralValue = positions[user].collateral * collateralPrice / 1e18;
-        uint256 threshold = collateralValue * LIQUIDATION_THRESHOLD / 100;
-        uint256 debtValue = positions[user].debt * borrowTokenPrice / 1e18;
-
-        return threshold * 1e18 / debtValue;
+    
+    function setCollateralPrice(uint256 newPrice) external onlyOwner {
+        collateralPrice = newPrice;
     }
 }

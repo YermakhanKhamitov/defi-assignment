@@ -1,41 +1,33 @@
-name: Smart Contract Tests
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ "main" ]
   pull_request:
-    branches: [main]
+    branches: [ "main" ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
+
+      - name: Install Dependencies
+        run: forge install
 
       - name: Compile contracts
-        run: forge build --sizes
+        run: forge build
 
-      - name: Run all tests
-        run: forge test -vv
-
-      - name: Gas report
+      - name: Run tests and generate gas report
         run: forge test --gas-report
+        env:
+          MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
 
-      - name: Run coverage
-        run: forge coverage
-
-      - name: Install Slither
-        run: pip3 install slither-analyzer
-
-      - name: Run Slither analysis
-        run: slither . --exclude-dependencies --exclude-low
+      - name: Run Slither Action
+        uses: crytic/slither-action@v0.3.0
         continue-on-error: true

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
-import "../src/MyToken.sol";
+import {Test} from "forge-std/Test.sol";
+import {MyToken} from "../src/MyToken.sol";
 
 contract MyTokenTest is Test {
     MyToken token;
@@ -13,16 +13,16 @@ contract MyTokenTest is Test {
         token = new MyToken("MyToken", "MTK", 1000);
     }
 
-    function test_InitialSupply() public {
+    function test_InitialSupply() public view {
         assertEq(token.totalSupply(), 1000 * 10 ** 18);
     }
 
-    function test_InitialBalanceGoesToDeployer() public {
+    function test_InitialBalanceGoesToDeployer() public view {
         assertEq(token.balanceOf(address(this)), 1000 * 10 ** 18);
     }
 
     function test_Transfer() public {
-        token.transfer(alice, 100 * 10 ** 18);
+        require(token.transfer(alice, 100 * 10 ** 18));
         assertEq(token.balanceOf(alice), 100 * 10 ** 18);
         assertEq(token.balanceOf(address(this)), 900 * 10 ** 18);
     }
@@ -45,7 +45,7 @@ contract MyTokenTest is Test {
     function test_TransferFrom() public {
         token.approve(alice, 200 * 10 ** 18);
         vm.prank(alice);
-        token.transferFrom(address(this), bob, 200 * 10 ** 18);
+        require(token.transferFrom(address(this), bob, 200 * 10 ** 18));
         assertEq(token.balanceOf(bob), 200 * 10 ** 18);
         assertEq(token.allowance(address(this), alice), 0);
     }
@@ -76,7 +76,7 @@ contract MyTokenTest is Test {
     function test_TransferEmitsEvent() public {
         vm.expectEmit(true, true, false, true);
         emit MyToken.Transfer(address(this), alice, 100 * 10 ** 18);
-        token.transfer(alice, 100 * 10 ** 18);
+        require(token.transfer(alice, 100 * 10 ** 18));
     }
 
     function testFuzz_Transfer(address to, uint256 amount) public {
@@ -85,7 +85,7 @@ contract MyTokenTest is Test {
         amount = bound(amount, 0, token.balanceOf(address(this)));
 
         uint256 balanceBefore = token.balanceOf(address(this));
-        token.transfer(to, amount);
+        require(token.transfer(to, amount));
 
         assertEq(token.balanceOf(address(this)), balanceBefore - amount);
         assertEq(token.balanceOf(to), amount);

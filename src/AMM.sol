@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./LPToken.sol";
-
+import {LPToken} from "./LPToken.sol";
 interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -30,35 +29,33 @@ contract AMM {
     function addLiquidity(uint256 amountA, uint256 amountB) external returns (uint256 lpAmount) {
         require(amountA > 0 && amountB > 0, "zero amounts");
 
-        IERC20(tokenA).transferFrom(msg.sender, address(this), amountA);
-        IERC20(tokenB).transferFrom(msg.sender, address(this), amountB);
+        require(IERC20(tokenA).transferFrom(msg.sender, address(this), amountA), "A fail");
+        require(IERC20(tokenB).transferFrom(msg.sender, address(this), amountB), "B fail");
 
-        uint256 totalLP = lpToken.totalSupply();
+        uint256 totalLp = lpToken.totalSupply();
 
-        if (totalLP == 0) {
+        if (totalLp == 0) {
             lpAmount = _sqrt(amountA * amountB);
         } else {
-            uint256 lpFromA = (amountA * totalLP) / reserveA;
-            uint256 lpFromB = (amountB * totalLP) / reserveB;
+            uint256 lpFromA = (amountA * totalLp) / reserveA;
+            uint256 lpFromB = (amountB * totalLp) / reserveB;
             lpAmount = lpFromA < lpFromB ? lpFromA : lpFromB;
         }
 
         require(lpAmount > 0, "zero lp");
-
         reserveA += amountA;
         reserveB += amountB;
 
         lpToken.mint(msg.sender, lpAmount);
-
         emit LiquidityAdded(msg.sender, amountA, amountB, lpAmount);
     }
 
     function removeLiquidity(uint256 lpAmount) external returns (uint256 amountA, uint256 amountB) {
         require(lpAmount > 0, "zero lp");
 
-        uint256 totalLP = lpToken.totalSupply();
-        amountA = (lpAmount * reserveA) / totalLP;
-        amountB = (lpAmount * reserveB) / totalLP;
+        uint256 totalLp = lpToken.totalSupply();
+        amountA = (lpAmount * reserveA) / totalLp;
+        amountB = (lpAmount * reserveB) / totalLp;
 
         require(amountA > 0 && amountB > 0, "zero amounts out");
 
@@ -66,8 +63,8 @@ contract AMM {
         reserveA -= amountA;
         reserveB -= amountB;
 
-        IERC20(tokenA).transfer(msg.sender, amountA);
-        IERC20(tokenB).transfer(msg.sender, amountB);
+        require(IERC20(tokenA).transfer(msg.sender, amountA), "A out fail");
+        require(IERC20(tokenB).transfer(msg.sender, amountB), "B out fail");
 
         emit LiquidityRemoved(msg.sender, amountA, amountB, lpAmount);
     }
@@ -85,17 +82,16 @@ contract AMM {
 
     function swap(address tokenIn, uint256 amountIn, uint256 minAmountOut) external returns (uint256 amountOut) {
         require(tokenIn == tokenA || tokenIn == tokenB, "invalid token");
-        require(amountIn > 0, "zero amount");
-
+        
         bool isA = tokenIn == tokenA;
-        (uint256 reserveIn, uint256 reserveOut) = isA ? (reserveA, reserveB) : (reserveB, reserveA);
-        address tokenOut = isA ? tokenB : tokenA;
+        (uint256 rIn, uint256 rOut) = isA ? (reserveA, reserveB) : (reserveB, reserveA);
+        address tOut = isA ? tokenB : tokenA;
 
-        amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
+        amountOut = getAmountOut(amountIn, rIn, rOut);
         require(amountOut >= minAmountOut, "slippage: too little received");
 
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        IERC20(tokenOut).transfer(msg.sender, amountOut);
+        require(IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn), "In fail");
+        require(IERC20(tOut).transfer(msg.sender, amountOut), "Out fail");
 
         if (isA) {
             reserveA += amountIn;

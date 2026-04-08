@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
-import "../src/MyToken.sol";
+import {Test} from "forge-std/Test.sol";
+import {MyToken} from "../src/MyToken.sol";
 
 contract TransferHandler is Test {
     MyToken public token;
@@ -23,20 +23,22 @@ contract TransferHandler is Test {
         address from = actors[fromSeed % actors.length];
         address to = actors[toSeed % actors.length];
         amount = bound(amount, 0, token.balanceOf(from));
+        
         vm.prank(from);
-        token.transfer(to, amount);
+        bool success = token.transfer(to, amount);
+        require(success, "transfer failed");
     }
 }
 
 contract MyTokenInvariantTest is Test {
     MyToken token;
     TransferHandler handler;
-
     address[] actors;
 
     function setUp() public {
         token = new MyToken("Test", "TST", 0);
         handler = new TransferHandler(token);
+        
         targetContract(address(handler));
 
         actors.push(address(0x11));
@@ -44,11 +46,11 @@ contract MyTokenInvariantTest is Test {
         actors.push(address(0x33));
     }
 
-    function invariant_TotalSupplyNeverChangesFromTransfers() public {
+    function invariant_TotalSupplyNeverChangesFromTransfers() public view {
         assertEq(token.totalSupply(), 3000 * 10 ** 18);
     }
 
-    function invariant_NoAddressExceedsTotalSupply() public {
+    function invariant_NoAddressExceedsTotalSupply() public view {
         for (uint256 i = 0; i < actors.length; i++) {
             assertLe(token.balanceOf(actors[i]), token.totalSupply());
         }

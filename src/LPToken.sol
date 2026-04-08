@@ -19,18 +19,22 @@ contract LPToken {
         amm = _amm;
     }
 
-    modifier onlyAMM() {
-        require(msg.sender == amm, "only amm");
+    modifier onlyAmm() {
+        _checkAmm();
         _;
     }
 
-    function mint(address to, uint256 amount) external onlyAMM {
+    function _checkAmm() internal view {
+        require(msg.sender == amm, "only amm");
+    }
+
+    function mint(address to, uint256 amount) external onlyAmm {
         totalSupply += amount;
         balanceOf[to] += amount;
         emit Transfer(address(0), to, amount);
     }
 
-    function burn(address from, uint256 amount) external onlyAMM {
+    function burn(address from, uint256 amount) external onlyAmm {
         require(balanceOf[from] >= amount, "not enough lp");
         balanceOf[from] -= amount;
         totalSupply -= amount;
